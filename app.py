@@ -2,6 +2,7 @@ import os
 import re
 import string
 import hashlib
+from flask_cors import CORS
 from datetime import datetime, timezone
 from urllib.parse import urlparse
 
@@ -12,6 +13,8 @@ BASE62 = string.ascii_letters + string.digits
 CODE_LEN = 7
 
 app = Flask(__name__)
+#Allow CORS, only local at the moment (Front end Running on localhost:8080) Need to change for production
+CORS(app, resources={r"/api/*": {"origins": ["http://localhost:8000", "http://127.0.0.1:8000"]}})
 
 db_url = os.getenv("DATABASE_URL", "sqlite:///shortener.db")
 if db_url.startswith("postgres://"):
@@ -65,9 +68,6 @@ def build_short_url(code: str) -> str:
         return f"{PUBLIC_BASE_URL}/r/{code}"
     return f"/r/{code}"
 
-@app.get("/")
-def home():
-    return render_template("index.html")
 
 @app.post("/api/shorten")
 def api_shorten():
@@ -132,5 +132,5 @@ def info(code: str):
 if __name__ == "__main__":
     with app.app_context():
         db.create_all()
-    port = int(os.getenv("PORT", "8000"))
+    port = int(os.getenv("PORT", "8001"))
     app.run(host="0.0.0.0", port=port, debug=True)
