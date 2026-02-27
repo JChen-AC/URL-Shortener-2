@@ -6,13 +6,15 @@ from flask_cors import CORS
 from datetime import datetime, timezone
 from urllib.parse import urlparse, quote_plus
 import redis 
+from dotenv import load_dotenv
+
+
 from flask import Flask, jsonify, redirect, render_template, request
 from flask_sqlalchemy import SQLAlchemy
-from dotenv import load_dotenv
-load_dotenv()  # must happen before getenv()
 
 BASE62 = string.ascii_letters + string.digits
 CODE_LEN = 7
+load_dotenv()
 
 app = Flask(__name__)
 #Allow CORS, only local at the moment (Front end Running on localhost:8080) Need to change for production
@@ -30,11 +32,8 @@ PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "").rstrip("/")
 db = SQLAlchemy(app)
 
 REDIS_HOST = os.getenv("REDIS_HOST")
-print(repr(os.getenv("REDIS_HOST")))
 REDIS_PORT = os.getenv("REDIS_PORT")
-print(repr(os.getenv("REDIS_PORT")))
 PASSWORD = os.getenv("REDIS_PASSWORD")
-print(repr(os.getenv("REDIS_PASSWORD")))
 THRESHOLD=5
 
 redis_client = redis.Redis(
@@ -112,7 +111,7 @@ def api_shorten():
         db.session.add(link)
         db.session.commit()
         return jsonify(code=link.code, short_url=build_short_url(link.code)), 201
-
+    
     existing.code = redis_client.get(url_hash)
     if(not existing.code):
         existing = Link.query.filter_by(url_hash=url_hash).first()
@@ -133,11 +132,20 @@ def api_shorten():
 
 @app.get("/r/<code>")
 def follow(code: str):
+    url = redis_client.get(hash)
+    if(url is not None):
+        url_update = Link.query.filter_by(code=code).first()
+        url_update.clicks += 1       
+        db.session.commit()
+        return redirect(url, code=303)
     link = Link.query.filter_by(code=code).first()
     if not link:
         return jsonify(error="Not found"), 404
     link.clicks += 1
     db.session.commit()
+    if(link.clicks >= THRESHOLD):
+        redis_client.set(link.url_hash,link.code) 
+        redis_client.set(link.code,link.url) 
     return redirect(link.url, code=302)
 
 @app.get("/api/<code>")
@@ -151,6 +159,10 @@ def info(code: str):
         clicks=link.clicks,
         created_at=link.created_at.isoformat()
     )
+## helthcheck endpoint
+@app.get("/health")
+def health():
+    return jsonify(status="ok"), 200
 
 def fill_redis():
     results = Link.query.filter(Link.clicks > THRESHOLD).all()
@@ -167,7 +179,7 @@ def fill_redis():
 
 with app.app_context():
     print("Filling redis")
-    fill_redis()   
+    fill_redis()  
 
 if __name__ == "__main__":
     with app.app_context():
