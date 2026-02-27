@@ -6,15 +6,14 @@ from flask_cors import CORS
 from datetime import datetime, timezone
 from urllib.parse import urlparse, quote_plus
 import redis 
-from dotenv import load_dotenv
 
 
 from flask import Flask, jsonify, redirect, render_template, request
 from flask_sqlalchemy import SQLAlchemy
-
+from dotenv import load_dotenv
+load_dotenv()  # must happen before getenv()
 BASE62 = string.ascii_letters + string.digits
 CODE_LEN = 7
-load_dotenv()
 
 app = Flask(__name__)
 #Allow CORS, only local at the moment (Front end Running on localhost:8080) Need to change for production
@@ -112,12 +111,13 @@ def api_shorten():
         db.session.commit()
         return jsonify(code=link.code, short_url=build_short_url(link.code)), 201
     
-    existing.code = redis_client.get(url_hash)
-    if(not existing.code):
-        existing = Link.query.filter_by(url_hash=url_hash).first()
-    if existing:
-        return jsonify(code=existing.code, short_url=build_short_url(existing.code)), 200
-
+    existing_code = redis_client.get(url_hash)
+    if(not existing_code):
+        existing = Link.query.filter_by(url_hash=url_hash).first()        
+        if existing:
+            return jsonify(code=existing.code, short_url=build_short_url(existing.code)), 200
+    else:
+        return jsonify(code=existing_code, short_url=build_short_url(existing_code)), 201
     code = stable_code_from_url(url)
     attempt = 0
     while Link.query.filter_by(code=code).first():
@@ -132,7 +132,7 @@ def api_shorten():
 
 @app.get("/r/<code>")
 def follow(code: str):
-    url = redis_client.get(hash)
+    url = redis_client.get(code)
     if(url is not None):
         url_update = Link.query.filter_by(code=code).first()
         url_update.clicks += 1       
